@@ -1,0 +1,146 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, "Noto Sans", "Liberation Sans", sans-serif;
+}
+
+body {
+  margin: 0;
+}
+
+.container {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+header h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.muted {
+  opacity: 0.7;
+}
+
+.card {
+  border: 1px solid color-mix(in oklab, currentColor 18%, transparent);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+form {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 12px;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+}
+
+input,
+select,
+textarea {
+  padding: 10px 10px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in oklab, currentColor 20%, transparent);
+  background: color-mix(in oklab, canvas 96%, currentColor 4%);
+}
+
+textarea {
+  resize: vertical;
+  min-height: 62px;
+}
+
+button {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in oklab, currentColor 20%, transparent);
+  background: color-mix(in oklab, canvas 90%, currentColor 10%);
+  cursor: pointer;
+}
+
+button.primary {
+  background: color-mix(in oklab, dodgerblue 20%, canvas 80%);
+  border-color: color-mix(in oklab, dodgerblue 35%, transparent);
+}
+
+.row-6 {
+  grid-column: span 6;
+}
+.row-4 {
+  grid-column: span 4;
+}
+.row-3 {
+  grid-column: span 3;
+}
+.row-2 {
+  grid-column: span 2;
+}
+.row-12 {
+  grid-column: span 12;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 12px 0 6px;
+}
+
+.list {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in oklab, currentColor 14%, transparent);
+}
+
+.item h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, currentColor 18%, transparent);
+}
