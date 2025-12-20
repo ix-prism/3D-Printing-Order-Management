@@ -48,6 +48,7 @@ interface Window {
     createOrder: (payload: Partial<Order>) => Promise<Order>;
     updateOrder: (dirName: string, patch: Partial<Order>) => Promise<Order>;
     selectFiles: () => Promise<string[]>;
+    readFileBuffer: (filePath: string) => Promise<Uint8Array | null>;
     getClipboardImage: () => Promise<string | null>;
     getPreviewDataUrl: (dirName: string, previewFile: string) => Promise<string | null>;
     showFileInFolder: (dirName: string, savedAs: string) => Promise<boolean>;

@@ -1,9 +1,15 @@
 import { api } from "./api";
 import { startFileDrag } from "./drag";
 import { applyOrderUpdate, refreshOrders } from "./orders";
-import { addPendingFiles, addPendingFilesFromFileObjects, applyPendingPreviews } from "./pending";
+import {
+  addPendingFiles,
+  addPendingFilesFromFileObjects,
+  applyPendingPreviews,
+  fillPendingPreviewsFromPaths
+} from "./pending";
+import { generatePreviewDataUrl, isPreviewableFileName } from "./preview-generator";
 import { applyPreviewToDom, cachePreview, dropPreviewCache } from "./preview";
-import { resetDraftOrder, state } from "./state";
+import { PendingFile, resetDraftOrder, state } from "./state";
 import {
   clampQuantities,
   dataTransferToFiles,
@@ -120,6 +126,9 @@ export function bindHandlers(root: HTMLElement, render: () => void) {
       const paths = await api.selectFiles();
       addPendingFiles(paths);
       render();
+      if (paths.length > 0) {
+        fillPendingPreviewsFromPaths(paths, render);
+      }
     });
     zone.addEventListener("dragover", (e) => {
       e.preventDefault();
@@ -134,6 +143,7 @@ export function bindHandlers(root: HTMLElement, render: () => void) {
       if (paths.length > 0) {
         addPendingFiles(paths);
         render();
+        fillPendingPreviewsFromPaths(paths, render);
         return;
       }
       const files = dataTransferToFiles(dt);
@@ -202,14 +212,31 @@ export function bindHandlers(root: HTMLElement, render: () => void) {
     };
     const handleFileObjects = async (files: File[]) => {
       if (!files || files.length === 0) return;
+      const previews: PendingFile[] = [];
       const payloads = await Promise.all(
-        files.map(async (file) => ({
-          name: file.name,
-          data: await file.arrayBuffer()
-        }))
+        files.map(async (file) => {
+          const data = await file.arrayBuffer();
+          if (isPreviewableFileName(file.name)) {
+            const preview = await generatePreviewDataUrl(file.name, data);
+            if (preview) {
+              previews.push({
+                id: `preview:${file.name}:${file.size}:${file.lastModified}`,
+                name: file.name,
+                note: "",
+                previewDataUrl: preview
+              });
+            }
+          }
+          return {
+            name: file.name,
+            data
+          };
+        })
       );
       const updated = await api.addFiles(id, payloads);
-      applyOrderUpdate(updated);
+      const updatedWithPreviews =
+        previews.length > 0 ? await applyPendingPreviews(updated, previews) : updated;
+      applyOrderUpdate(updatedWithPreviews);
       render();
     };
 

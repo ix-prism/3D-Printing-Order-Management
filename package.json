@@ -16,7 +16,10 @@
     "dist": "npm run build && set CSC_IDENTITY_AUTO_DISCOVERY=false&& electron-builder",
     "icons:generate": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/generate-icons.ps1 && node scripts/make-ico.mjs"
   },
-  "dependencies": {},
+  "dependencies": {
+    "jszip": "^3.10.1",
+    "three": "^0.167.1"
+  },
   "devDependencies": {
     "concurrently": "^9.1.0",
     "electron": "^32.2.0",

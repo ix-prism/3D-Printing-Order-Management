@@ -3,6 +3,13 @@ const fs = require("fs");
 const fsp = fs.promises;
 const path = require("path");
 
+const appName = "PrintOrder";
+app.setName(appName);
+const userDataDir = path.join(app.getPath("appData"), appName);
+app.setPath("userData", userDataDir);
+app.commandLine.appendSwitch("disk-cache-dir", path.join(userDataDir, "cache"));
+app.commandLine.appendSwitch("gpu-cache-dir", path.join(userDataDir, "gpu-cache"));
+
 const devServerUrl = process.env.VITE_DEV_SERVER_URL;
 const settingsPath = () => path.join(app.getPath("userData"), "settings.json");
 const appId = "com.printstudio.printorder";
@@ -183,6 +190,13 @@ ipcMain.handle("select-files", async () => {
   });
   if (result.canceled) return [];
   return result.filePaths;
+});
+
+ipcMain.handle("read-file-buffer", async (_event, filePath) => {
+  if (!filePath || typeof filePath !== "string") return null;
+  const normalized = path.normalize(filePath);
+  if (!fs.existsSync(normalized)) return null;
+  return await fsp.readFile(normalized);
 });
 
 ipcMain.handle("show-file-in-folder", async (_event, dirName, savedAs) => {
