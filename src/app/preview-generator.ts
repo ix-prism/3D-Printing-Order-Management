@@ -18,9 +18,14 @@ import { ThreeMFLoader } from "three/examples/jsm/loaders/3MFLoader.js";
 
 const PREVIEW_SIZE = 256;
 const SUPPORTED_EXTS = new Set([".stl", ".obj", ".3mf"]);
+const STEP_EXTS = new Set([".stp", ".step"]);
 
 export function isPreviewableFileName(name: string) {
   return SUPPORTED_EXTS.has(getExtension(name));
+}
+
+export function isStepFileName(name: string) {
+  return STEP_EXTS.has(getExtension(name));
 }
 
 export function getExtension(name: string) {
@@ -61,8 +66,14 @@ export async function generatePreviewDataUrl(fileName: string, data: ArrayBuffer
 async function extract3mfThumbnail(data: ArrayBuffer) {
   const zip = await JSZip.loadAsync(data);
   const candidates = zip.file(/metadata\/thumbnail\.(png|jpe?g)$/i);
-  if (!candidates || candidates.length === 0) return null;
-  const entry = candidates[0];
+  if (candidates && candidates.length > 0) {
+    const entry = candidates[0];
+    const blob = await entry.async("blob");
+    return await blobToDataUrl(blob);
+  }
+  const plateCandidates = zip.file(/metadata\/plate_\d+\.png$/i);
+  if (!plateCandidates || plateCandidates.length === 0) return null;
+  const entry = plateCandidates[0];
   const blob = await entry.async("blob");
   return await blobToDataUrl(blob);
 }

@@ -199,6 +199,23 @@ ipcMain.handle("read-file-buffer", async (_event, filePath) => {
   return await fsp.readFile(normalized);
 });
 
+ipcMain.handle("get-file-thumbnail", async (_event, filePath, size = 256) => {
+  if (!filePath || typeof filePath !== "string") return null;
+  const normalized = path.normalize(filePath);
+  if (!fs.existsSync(normalized)) return null;
+  try {
+    const image = await nativeImage.createThumbnailFromPath(normalized, {
+      width: size,
+      height: size
+    });
+    if (!image || image.isEmpty()) return null;
+    return image.toDataURL();
+  } catch (error) {
+    console.warn("Thumbnail failed:", error);
+    return null;
+  }
+});
+
 ipcMain.handle("show-file-in-folder", async (_event, dirName, savedAs) => {
   const settings = await readSettings();
   if (!settings.baseDir || !dirName || !savedAs) return false;

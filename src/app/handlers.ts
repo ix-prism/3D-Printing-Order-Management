@@ -7,7 +7,7 @@ import {
   applyPendingPreviews,
   fillPendingPreviewsFromPaths
 } from "./pending";
-import { generatePreviewDataUrl, isPreviewableFileName } from "./preview-generator";
+import { generatePreviewDataUrl, isPreviewableFileName, isStepFileName } from "./preview-generator";
 import { applyPreviewToDom, cachePreview, dropPreviewCache } from "./preview";
 import { PendingFile, resetDraftOrder, state } from "./state";
 import {
@@ -216,7 +216,9 @@ export function bindHandlers(root: HTMLElement, render: () => void) {
       const payloads = await Promise.all(
         files.map(async (file) => {
           const data = await file.arrayBuffer();
-          if (isPreviewableFileName(file.name)) {
+          if (isStepFileName(file.name)) {
+            // No path available for system thumbnails in this path.
+          } else if (isPreviewableFileName(file.name)) {
             const preview = await generatePreviewDataUrl(file.name, data);
             if (preview) {
               previews.push({

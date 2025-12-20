@@ -1,5 +1,11 @@
 import { api } from "./api";
-import { generatePreviewDataUrl, isPreviewableFileName, toArrayBuffer } from "./preview-generator";
+import {
+  generatePreviewDataUrl,
+  getExtension,
+  isPreviewableFileName,
+  isStepFileName,
+  toArrayBuffer
+} from "./preview-generator";
 import { PendingFile, previewCache, state } from "./state";
 import { basename, previewFileName, previewKey } from "./utils";
 
@@ -41,6 +47,16 @@ export async function addPendingFilesFromFileObjects(files: File[]) {
 
 export async function fillPendingPreviewsFromPaths(paths: string[], onUpdate: () => void) {
   for (const p of paths) {
+    const ext = getExtension(p);
+    if (isStepFileName(p)) {
+      const thumb = await api.getFileThumbnail(p, 256);
+      if (!thumb) continue;
+      const item = state.pendingFiles.find((f) => f.path === p);
+      if (!item) continue;
+      item.previewDataUrl = thumb;
+      onUpdate();
+      continue;
+    }
     if (!isPreviewableFileName(p)) continue;
     const data = await api.readFileBuffer(p);
     const arrayBuffer = toArrayBuffer(data ?? null);

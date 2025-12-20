@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   updateOrder: (dirName, patch) => ipcRenderer.invoke("update-order", dirName, patch),
   selectFiles: () => ipcRenderer.invoke("select-files"),
   readFileBuffer: (filePath) => ipcRenderer.invoke("read-file-buffer", filePath),
+  getFileThumbnail: (filePath, size) => ipcRenderer.invoke("get-file-thumbnail", filePath, size),
   getClipboardImage: () => ipcRenderer.invoke("get-clipboard-image"),
   getPreviewDataUrl: (dirName, previewFile) =>
     ipcRenderer.invoke("get-preview-data-url", dirName, previewFile),
