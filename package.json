@@ -2,6 +2,8 @@
   "name": "3d-print-order-manager",
   "private": true,
   "version": "0.1.0",
+  "description": "3D??????",
+  "author": "Studio",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -9,14 +11,37 @@
     "build": "vite build",
     "preview": "vite preview",
     "electron": "electron .",
-    "electron:dev": "concurrently -k \"vite\" \"wait-on http://localhost:5180 && electron .\""
+    "electron:dev": "concurrently -k \"vite\" \"wait-on http://localhost:5180 && set VITE_DEV_SERVER_URL=http://localhost:5180&& electron .\"",
+    "pack": "npm run build && set CSC_IDENTITY_AUTO_DISCOVERY=false&& electron-builder --win portable",
+    "dist": "npm run build && set CSC_IDENTITY_AUTO_DISCOVERY=false&& electron-builder"
   },
   "dependencies": {},
   "devDependencies": {
     "concurrently": "^9.1.0",
     "electron": "^32.2.0",
+    "electron-builder": "^24.13.3",
     "typescript": "^5.6.3",
     "vite": "^5.4.11",
     "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.printstudio.order-manager",
+    "productName": "3D打印订单管理",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "electron/**",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "portable"
+        }
+      ]
+    }
   }
 }

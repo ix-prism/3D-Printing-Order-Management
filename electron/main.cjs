@@ -3,7 +3,7 @@ const fs = require("fs");
 const fsp = fs.promises;
 const path = require("path");
 
-const devServerUrl = "http://localhost:5180";
+const devServerUrl = process.env.VITE_DEV_SERVER_URL;
 const settingsPath = () => path.join(app.getPath("userData"), "settings.json");
 const dragIconPath = path.join(__dirname, "drag-icon.png");
 const dragIconDataUrl =
@@ -37,7 +37,7 @@ function createWindow() {
     }
   });
 
-  if (app.isPackaged) {
+  if (app.isPackaged || !devServerUrl) {
     win.loadFile(path.join(__dirname, "..", "dist", "index.html"));
   } else {
     win.loadURL(devServerUrl);
