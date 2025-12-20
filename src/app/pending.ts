@@ -3,13 +3,32 @@ import { PendingFile, previewCache, state } from "./state";
 import { basename, previewFileName, previewKey } from "./utils";
 
 export function addPendingFiles(paths: string[]) {
-  const existing = new Set(state.pendingFiles.map((f) => f.path));
+  const existing = new Set(state.pendingFiles.map((f) => f.id));
   for (const p of paths) {
-    if (existing.has(p)) continue;
+    const id = `path:${p}`;
+    if (existing.has(id)) continue;
     state.pendingFiles.push({
+      id,
       path: p,
       name: basename(p),
       note: ""
+    });
+  }
+}
+
+export async function addPendingFilesFromFileObjects(files: File[]) {
+  const existing = new Set(state.pendingFiles.map((f) => f.id));
+  for (const file of files) {
+    const id = `file:${file.name}:${file.size}:${file.lastModified}`;
+    if (existing.has(id)) continue;
+    const data = await file.arrayBuffer();
+    state.pendingFiles.push({
+      id,
+      name: file.name,
+      note: "",
+      data,
+      size: file.size,
+      lastModified: file.lastModified
     });
   }
 }

@@ -1,6 +1,11 @@
 /// <reference types="vite/client" />
 
-type OrderStatus = "新建" | "打印中" | "后处理" | "已完成" | "已取消";
+type OrderStatus =
+  | "\u65b0\u5efa"
+  | "\u6253\u5370\u4e2d"
+  | "\u540e\u5904\u7406"
+  | "\u5df2\u5b8c\u6210"
+  | "\u5df2\u53d6\u6d88";
 
 type OrderFile = {
   name: string;
@@ -49,7 +54,14 @@ interface Window {
     startDragFile: (filePath: string) => boolean;
     addFiles: (
       dirName: string,
-      files: Array<{ path: string; note?: string; printQty?: number; printedQty?: number }>,
+      files: Array<{
+        path?: string;
+        name?: string;
+        data?: ArrayBuffer;
+        note?: string;
+        printQty?: number;
+        printedQty?: number;
+      }>,
       folderNote?: string
     ) => Promise<Order>;
     replaceFile: (dirName: string, savedAs: string, newPath: string) => Promise<Order>;

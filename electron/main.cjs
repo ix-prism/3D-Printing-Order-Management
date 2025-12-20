@@ -5,10 +5,30 @@ const path = require("path");
 
 const devServerUrl = process.env.VITE_DEV_SERVER_URL;
 const settingsPath = () => path.join(app.getPath("userData"), "settings.json");
+const appId = "com.printstudio.printorder";
+const appIconPath = path.join(__dirname, "app-icon.png");
 const dragIconPath = path.join(__dirname, "drag-icon.png");
 const dragIconDataUrl =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAPUlEQVRYR+3OMQEAIAzAsANf+UeSgqJXyabWcgXBecNADQNSqZL0tVZr0s5V3q9f9+0iYAPWwQFbEOy0uAAAAAElFTkSuQmCC";
+const appIconDataUrl = dragIconDataUrl;
+let appIcon;
 let dragIcon;
+
+function getAppIcon() {
+  if (appIcon) return appIcon;
+  if (!nativeImage) return null;
+  let icon;
+  if (fs.existsSync(appIconPath)) {
+    icon = nativeImage.createFromPath(appIconPath);
+  }
+  if (!icon || icon.isEmpty()) {
+    if (typeof nativeImage.createFromDataURL !== "function") return null;
+    icon = nativeImage.createFromDataURL(appIconDataUrl);
+  }
+  if (!icon || icon.isEmpty()) return null;
+  appIcon = icon;
+  return appIcon;
+}
 
 function getDragIcon() {
   if (dragIcon) return dragIcon;
@@ -30,6 +50,7 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1100,
     height: 760,
+    icon: getAppIcon() ?? undefined,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -66,13 +87,12 @@ function formatDateYYMMDD(d = new Date()) {
 }
 
 function sanitizeSegment(value) {
-  const cleaned = String(value || "")
+  const cleaned = String(value ?? "")
     .replace(/[<>:"/\\|?*\\x00-\\x1F]/g, "")
     .replace(/\s+/g, "_")
     .trim();
-  return cleaned || "未命名";
+  return cleaned || "\u672a\u547d\u540d";
 }
-
 function ensureBaseDir(baseDir) {
   return fsp.mkdir(baseDir, { recursive: true });
 }
@@ -111,7 +131,21 @@ function decodeImageDataUrl(dataUrl) {
   return Buffer.from(match[2], "base64");
 }
 
+function toBuffer(data) {
+  if (!data) return null;
+  if (Buffer.isBuffer(data)) return data;
+  if (data instanceof ArrayBuffer) return Buffer.from(data);
+  if (data instanceof Uint8Array) return Buffer.from(data);
+  if (data?.type === "Buffer" && Array.isArray(data.data)) {
+    return Buffer.from(data.data);
+  }
+  return null;
+}
+
 app.whenReady().then(() => {
+  if (process.platform === "win32") {
+    app.setAppUserModelId(appId);
+  }
   createWindow();
 
   app.on("activate", () => {
@@ -269,7 +303,7 @@ ipcMain.handle("create-order", async (_event, payload) => {
     material: payload?.material ?? "",
     quantity: Number(payload?.quantity ?? 1),
     dueDate: payload?.dueDate ?? "",
-    status: payload?.status ?? "新建",
+    status: payload?.status ?? "\u65b0\u5efa",
     note: payload?.note ?? "",
     folderNote: payload?.folderNote ?? "",
     shippingInfo: payload?.shippingInfo ?? "",
@@ -312,7 +346,7 @@ ipcMain.handle("copy-order", async (_event, dirName) => {
     dirName: nextDirName,
     orderNo,
     datePrefix,
-    status: "新建",
+    status: "\u65b0\u5efa",
     shippingInfo: "",
     createdAt: new Date().toISOString(),
     files: (sourceOrder.files || []).map((file) => ({
@@ -357,10 +391,18 @@ ipcMain.handle("add-files", async (_event, dirName, files, folderNote) => {
   const addedFiles = [];
 
   for (const file of files || []) {
-    if (!file?.path) continue;
-    const originalName = path.basename(file.path);
+    const hasPath = typeof file?.path === "string" && file.path.length > 0;
+    const hasData = file?.data && file?.name;
+    if (!hasPath && !hasData) continue;
+    const originalName = hasPath ? path.basename(file.path) : path.basename(String(file.name));
     const targetPath = uniquePath(path.join(orderDir, originalName));
-    await fsp.copyFile(file.path, targetPath);
+    if (hasPath) {
+      await fsp.copyFile(file.path, targetPath);
+    } else {
+      const buffer = toBuffer(file.data);
+      if (!buffer) continue;
+      await fsp.writeFile(targetPath, buffer);
+    }
     const printQty = Number.isFinite(Number(file.printQty)) ? Math.max(0, Number(file.printQty)) : 1;
     const printedQty = Number.isFinite(Number(file.printedQty)) ? Math.max(0, Number(file.printedQty)) : 0;
     addedFiles.push({

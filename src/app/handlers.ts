@@ -1,11 +1,12 @@
 import { api } from "./api";
 import { startFileDrag } from "./drag";
 import { applyOrderUpdate, refreshOrders } from "./orders";
-import { addPendingFiles, applyPendingPreviews } from "./pending";
+import { addPendingFiles, addPendingFilesFromFileObjects, applyPendingPreviews } from "./pending";
 import { applyPreviewToDom, cachePreview, dropPreviewCache } from "./preview";
 import { resetDraftOrder, state } from "./state";
 import {
   clampQuantities,
+  dataTransferToFiles,
   dataTransferToPaths,
   isEditingElement,
   isInteractiveTarget,
@@ -37,7 +38,7 @@ export function bindHandlers(root: HTMLElement, render: () => void) {
       dueDate: createForm.querySelector<HTMLInputElement>('input[name="dueDate"]')?.value ?? "",
       status:
         (createForm.querySelector<HTMLSelectElement>('select[name="status"]')?.value as OrderStatus) ??
-        "新建",
+        "\u65b0\u5efa",
       note: createForm.querySelector<HTMLTextAreaElement>('textarea[name="note"]')?.value ?? "",
       folderNote: createForm.querySelector<HTMLTextAreaElement>('textarea[name="folderNote"]')?.value ?? ""
     };
@@ -58,7 +59,7 @@ export function bindHandlers(root: HTMLElement, render: () => void) {
       material: String(data.get("material") ?? "").trim(),
       quantity,
       dueDate: String(data.get("dueDate") ?? "").trim(),
-      status: (String(data.get("status") ?? "新建") as OrderStatus) ?? "新建",
+      status: (String(data.get("status") ?? "\u65b0\u5efa") as OrderStatus) ?? "\u65b0\u5efa",
       note: String(data.get("note") ?? "").trim(),
       folderNote: String(data.get("folderNote") ?? "").trim()
     };
@@ -66,7 +67,12 @@ export function bindHandlers(root: HTMLElement, render: () => void) {
     const order = await api.createOrder(payload);
 
     if (state.pendingFiles.length > 0) {
-      const filesPayload = state.pendingFiles.map((f) => ({ path: f.path, note: f.note }));
+      const filesPayload = state.pendingFiles.map((f) => ({
+        path: f.path,
+        name: f.name,
+        data: f.data,
+        note: f.note
+      }));
       const updated = await api.addFiles(order.dirName, filesPayload);
       await applyPendingPreviews(updated, state.pendingFiles);
     }
@@ -125,12 +131,17 @@ export function bindHandlers(root: HTMLElement, render: () => void) {
       zone.classList.remove("dragover");
       const dt = e.dataTransfer;
       const paths = dataTransferToPaths(dt);
-      if (paths.length === 0) {
-        alert("未能读取文件路径，请使用“点击选择文件”。");
+      if (paths.length > 0) {
+        addPendingFiles(paths);
+        render();
         return;
       }
-      addPendingFiles(paths);
-      render();
+      const files = dataTransferToFiles(dt);
+      if (files.length === 0) {
+                alert("\u672a\u80fd\u8bfb\u53d6\u6587\u4ef6\u8def\u5f84\uff0c\u8bf7\u4ece\u8d44\u6e90\u7ba1\u7406\u5668\u62d6\u5165\uff0c\u6216\u70b9\u51fb\u9009\u62e9\u6587\u4ef6\u3002");
+        return;
+      }
+      addPendingFilesFromFileObjects(files).then(() => render());
     });
   });
 
@@ -189,6 +200,18 @@ export function bindHandlers(root: HTMLElement, render: () => void) {
       applyOrderUpdate(updated);
       render();
     };
+    const handleFileObjects = async (files: File[]) => {
+      if (!files || files.length === 0) return;
+      const payloads = await Promise.all(
+        files.map(async (file) => ({
+          name: file.name,
+          data: await file.arrayBuffer()
+        }))
+      );
+      const updated = await api.addFiles(id, payloads);
+      applyOrderUpdate(updated);
+      render();
+    };
 
     zone.addEventListener("click", async () => {
       const paths = await api.selectFiles();
@@ -204,11 +227,16 @@ export function bindHandlers(root: HTMLElement, render: () => void) {
       zone.classList.remove("dragover");
       const dt = e.dataTransfer;
       const paths = dataTransferToPaths(dt);
-      if (paths.length === 0) {
-        alert("未能读取文件路径，请使用“点击选择文件”。");
+      if (paths.length > 0) {
+        await handlePaths(paths);
         return;
       }
-      await handlePaths(paths);
+      const files = dataTransferToFiles(dt);
+      if (files.length === 0) {
+                alert("\u672a\u80fd\u8bfb\u53d6\u6587\u4ef6\u8def\u5f84\uff0c\u8bf7\u4ece\u8d44\u6e90\u7ba1\u7406\u5668\u62d6\u5165\uff0c\u6216\u70b9\u51fb\u9009\u62e9\u6587\u4ef6\u3002");
+        return;
+      }
+      await handleFileObjects(files);
     });
   });
 
@@ -265,7 +293,7 @@ export function bindHandlers(root: HTMLElement, render: () => void) {
         applyOrderUpdate(updated);
       }
       if (select.value === "delete") {
-        if (!confirm("确定要删除这个文件吗？")) {
+        if (!confirm("\u786e\u5b9a\u8981\u5220\u9664\u5417\uff1f")) {
           select.value = "";
           return;
         }
@@ -408,7 +436,7 @@ export function bindHandlers(root: HTMLElement, render: () => void) {
       const item = btn.closest<HTMLElement>("[data-id]");
       const id = item?.getAttribute("data-id");
       if (!id) return;
-      if (!confirm("确定要删除这个订单吗？")) return;
+      if (!confirm("\u786e\u5b9a\u8981\u5220\u9664\u5417\uff1f")) return;
       await api.deleteOrder(id);
       state.editingOrderId = null;
       await refreshOrders();
@@ -499,7 +527,7 @@ export function attachGlobalHandlers(render: () => void) {
       return;
     }
     if (state.selectedTarget.kind === "order-file") {
-      if (!confirm("确定要删除这个文件吗？")) return;
+      if (!confirm("\u786e\u5b9a\u8981\u5220\u9664\u5417\uff1f")) return;
       const { dirName, savedAs } = state.selectedTarget;
       const updated = await api.deleteFile(dirName, savedAs);
       applyOrderUpdate(updated);
@@ -516,7 +544,7 @@ export function attachGlobalHandlers(render: () => void) {
     e.preventDefault();
     const dataUrl = await api.getClipboardImage();
     if (!dataUrl) {
-      alert("剪贴板里没有图片。");
+              alert("\u672a\u80fd\u8bfb\u53d6\u6587\u4ef6\u8def\u5f84\uff0c\u8bf7\u4ece\u8d44\u6e90\u7ba1\u7406\u5668\u62d6\u5165\uff0c\u6216\u70b9\u51fb\u9009\u62e9\u6587\u4ef6\u3002");
       return;
     }
     if (state.selectedTarget.kind === "pending-preview") {

@@ -1,7 +1,11 @@
-export type PendingFile = {
-  path: string;
+﻿export type PendingFile = {
+  id: string;
+  path?: string;
   name: string;
   note: string;
+  data?: ArrayBuffer;
+  size?: number;
+  lastModified?: number;
   previewDataUrl?: string;
 };
 
@@ -41,7 +45,7 @@ export const state = {
     material: "",
     quantity: 1,
     dueDate: "",
-    status: "新建" as OrderStatus,
+    status: "\u65b0\u5efa" as OrderStatus,
     note: "",
     folderNote: ""
   } as DraftOrder
@@ -54,7 +58,7 @@ export function resetDraftOrder() {
     material: "",
     quantity: 1,
     dueDate: "",
-    status: "新建",
+    status: "\u65b0\u5efa",
     note: "",
     folderNote: ""
   };
