@@ -27,6 +27,7 @@
   "build": {
     "appId": "com.printstudio.order-manager",
     "productName": "3D打印订单管理",
+    "icon": "build/icon.png",
     "directories": {
       "output": "release"
     },
@@ -37,6 +38,7 @@
     ],
     "asar": true,
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         {
           "target": "portable"
