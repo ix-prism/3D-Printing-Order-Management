@@ -1,8 +1,10 @@
-﻿export type PendingFile = {
+﻿import { DEFAULT_THEME, ThemeId } from "./theme";
+export type PendingFile = {
   id: string;
   path?: string;
   name: string;
   note: string;
+  printQty?: number;
   data?: ArrayBuffer;
   size?: number;
   lastModified?: number;
@@ -32,10 +34,23 @@ export const previewLoading = new Set<string>();
 export const state = {
   orders: [] as Order[],
   settings: {} as Settings,
-  activeTab: "add" as "add" | "manage" | "settings",
+  activeTab: "add" as "add" | "manage" | "assets" | "settings",
   pendingFiles: [] as PendingFile[],
   selectedTarget: null as SelectedTarget | null,
   handlersAttached: false,
+  onboarding: false,
+  theme: DEFAULT_THEME as ThemeId,
+  searchQuery: "",
+  lastSearchQuery: "",
+  manageEditMode: false,
+  selectedOrderIds: new Set<string>(),
+  assetEditMode: false,
+  selectedCustomers: new Set<string>(),
+  selectedMaterials: new Set<string>(),
+  qtyStep: {
+    print: 1,
+    printed: 1
+  },
   editingOrderId: null as string | null,
   collapsedOrders: new Set<string>(),
   dragMode: "native" as "native" | "download",
@@ -63,3 +78,5 @@ export function resetDraftOrder() {
     folderNote: ""
   };
 }
+
+

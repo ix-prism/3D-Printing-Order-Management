@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, clipboard, shell, nativeImage } = require("electron");
+﻿const { app, BrowserWindow, ipcMain, dialog, clipboard, shell, nativeImage } = require("electron");
 const fs = require("fs");
 const fsp = fs.promises;
 const path = require("path");
@@ -13,6 +13,14 @@ app.commandLine.appendSwitch("gpu-cache-dir", path.join(userDataDir, "gpu-cache"
 const devServerUrl = process.env.VITE_DEV_SERVER_URL;
 const settingsPath = () => path.join(app.getPath("userData"), "settings.json");
 const appId = "com.printstudio.printorder";
+const allowedThemes = new Set(["classic", "glass-light", "glass-dark"]);
+
+function sanitizeTheme(value) {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return allowedThemes.has(trimmed) ? trimmed : undefined;
+}
+
 const appIconPath = path.join(__dirname, "app-icon.png");
 const dragIconPath = path.join(__dirname, "drag-icon.png");
 const dragIconDataUrl =
@@ -75,7 +83,15 @@ function createWindow() {
 async function readSettings() {
   try {
     const raw = await fsp.readFile(settingsPath(), "utf8");
-    return JSON.parse(raw);
+    const settings = JSON.parse(raw);
+    settings.customers = normalizeAssetList(settings.customers);
+    settings.materials = normalizeAssetList(settings.materials);
+    settings.theme = sanitizeTheme(settings.theme);
+    if (settings.baseDir && !fs.existsSync(settings.baseDir)) {
+      settings.baseDir = undefined;
+      await writeSettings(settings);
+    }
+    return settings;
   } catch {
     return {};
   }
@@ -100,6 +116,19 @@ function sanitizeSegment(value) {
     .trim();
   return cleaned || "\u672a\u547d\u540d";
 }
+function normalizeAssetList(list) {
+  if (!Array.isArray(list)) return [];
+  const seen = new Map();
+  for (const raw of list) {
+    const value = String(raw ?? "").trim();
+    if (!value) continue;
+    const key = value.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.set(key, value);
+  }
+  return Array.from(seen.values());
+}
+
 function ensureBaseDir(baseDir) {
   return fsp.mkdir(baseDir, { recursive: true });
 }
@@ -138,6 +167,24 @@ function decodeImageDataUrl(dataUrl) {
   return Buffer.from(match[2], "base64");
 }
 
+function is3mfFile(filePath) {
+  return String(filePath || "").toLowerCase().endsWith(".3mf");
+}
+
+function bambuDisplayName(fileName) {
+  const lower = String(fileName || "").toLowerCase();
+  if (lower.endsWith(".gcode.3mf")) return fileName.slice(0, -".gcode.3mf".length);
+  if (lower.endsWith(".3mf")) return fileName.slice(0, -".3mf".length);
+  return fileName || "model";
+}
+
+function buildBambuConnectUrl(filePath) {
+  const name = bambuDisplayName(path.basename(filePath));
+  const encodedPath = encodeURIComponent(filePath);
+  const encodedName = encodeURIComponent(name);
+  return `bambu-connect://import-file?path=${encodedPath}&name=${encodedName}&version=1.0.0`;
+}
+
 function toBuffer(data) {
   if (!data) return null;
   if (Buffer.isBuffer(data)) return data;
@@ -169,6 +216,37 @@ app.on("window-all-closed", () => {
 });
 
 ipcMain.handle("get-settings", async () => readSettings());
+ipcMain.handle("confirm-dialog", async (event, options = {}) => {
+  const win = BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getFocusedWindow();
+  const message = String(options.message ?? "\u786e\u5b9a\u8981\u7ee7\u7eed\u5417\uff1f");
+  const detail = String(options.detail ?? "");
+  const confirmLabel = String(options.confirmLabel ?? "\u786e\u5b9a");
+  const cancelLabel = String(options.cancelLabel ?? "\u53d6\u6d88");
+  const result = await dialog.showMessageBox(win ?? undefined, {
+    type: options.type ?? "warning",
+    message,
+    detail,
+    buttons: [confirmLabel, cancelLabel],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true
+  });
+  return result.response === 0;
+});
+
+ipcMain.handle("save-assets", async (_event, customers, materials) => {
+  const settings = await readSettings();
+  settings.customers = normalizeAssetList(customers);
+  settings.materials = normalizeAssetList(materials);
+  await writeSettings(settings);
+  return settings;
+});
+ipcMain.handle("save-theme", async (_event, theme) => {
+  const settings = await readSettings();
+  settings.theme = sanitizeTheme(theme) ?? "classic";
+  await writeSettings(settings);
+  return settings;
+});
 
 ipcMain.handle("choose-base-dir", async () => {
   const result = await dialog.showOpenDialog({
@@ -222,6 +300,16 @@ ipcMain.handle("show-file-in-folder", async (_event, dirName, savedAs) => {
   const filePath = path.join(settings.baseDir, dirName, savedAs);
   if (!fs.existsSync(filePath)) return false;
   shell.showItemInFolder(filePath);
+  return true;
+});
+
+ipcMain.handle("import-bambu-connect", async (_event, dirName, savedAs) => {
+  const settings = await readSettings();
+  if (!settings.baseDir || !dirName || !savedAs) return false;
+  const filePath = path.join(settings.baseDir, dirName, savedAs);
+  if (!fs.existsSync(filePath) || !is3mfFile(filePath)) return false;
+  const url = buildBambuConnectUrl(filePath);
+  await shell.openExternal(url);
   return true;
 });
 
@@ -611,3 +699,13 @@ ipcMain.handle("update-order-note", async (_event, dirName, note) => {
   await writeOrder(baseDir, dirName, order);
   return order;
 });
+
+
+
+
+
+
+
+
+
+

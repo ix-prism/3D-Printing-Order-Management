@@ -1,4 +1,4 @@
-import { api } from "./api";
+﻿import { api } from "./api";
 import { startFileDrag } from "./drag";
 import { applyOrderUpdate, refreshOrders } from "./orders";
 import {
@@ -10,6 +10,7 @@ import {
 import { generatePreviewDataUrl, isPreviewableFileName, isStepFileName } from "./preview-generator";
 import { applyPreviewToDom, cachePreview, dropPreviewCache } from "./preview";
 import { PendingFile, resetDraftOrder, state } from "./state";
+import { applyTheme, normalizeTheme } from "./theme";
 import {
   clampQuantities,
   dataTransferToFiles,
@@ -21,15 +22,118 @@ import {
   previewFileName
 } from "./utils";
 
+async function confirmDialog(message: string) {
+  if (typeof api.confirmDialog === "function") {
+    return api.confirmDialog({ message });
+  }
+  return window.confirm(message);
+}
+
 export function bindHandlers(root: HTMLElement, render: () => void) {
   const hasBaseDir = Boolean(state.settings.baseDir);
 
   root.querySelectorAll<HTMLButtonElement>(".tab").forEach((tab) => {
     tab.addEventListener("click", () => {
-      state.activeTab = (tab.dataset.tab as "add" | "manage" | "settings") ?? "add";
-      render();
+      const tabValue = tab.dataset.tab;
+      if (
+        tabValue === "add" ||
+        tabValue === "manage" ||
+        tabValue === "assets" ||
+        tabValue === "settings"
+      ) {
+        state.activeTab = tabValue;
+        render();
+      }
     });
   });
+
+  const normalizeAssetValue = (value: string) => value.trim();
+
+  const normalizeAssetList = (list: unknown) => {
+    if (!Array.isArray(list)) return [];
+    return list
+      .map((item) => normalizeAssetValue(String(item ?? "")))
+      .filter((item) => item.length > 0);
+  };
+
+  const getAssetLists = () => {
+    const customers = normalizeAssetList(state.settings.customers);
+    const materials = normalizeAssetList(state.settings.materials);
+    return { customers, materials };
+  };
+
+  const addAssetValue = (list: string[], value: string) => {
+    const normalized = normalizeAssetValue(value);
+    if (!normalized) return list;
+    const key = normalized.toLowerCase();
+    if (list.some((item) => item.toLowerCase() === key)) return list;
+    return [...list, normalized];
+  };
+
+  const removeAssetValue = (list: string[], value: string) => {
+    const key = normalizeAssetValue(value).toLowerCase();
+    if (!key) return list;
+    return list.filter((item) => item.toLowerCase() !== key);
+  };
+
+  const saveAssets = async (customers: string[], materials: string[]) => {
+    const updated = await api.saveAssets(customers, materials);
+    state.settings = updated;
+    const nextCustomers = normalizeAssetList(updated.customers);
+    const nextMaterials = normalizeAssetList(updated.materials);
+    state.selectedCustomers = new Set(
+      Array.from(state.selectedCustomers).filter((item) => nextCustomers.includes(item))
+    );
+    state.selectedMaterials = new Set(
+      Array.from(state.selectedMaterials).filter((item) => nextMaterials.includes(item))
+    );
+    render();
+  };
+  const resetInteractionState = () => {
+    state.selectedTarget = null;
+    state.editingOrderId = null;
+    state.manageEditMode = false;
+    state.assetEditMode = false;
+    state.selectedOrderIds.clear();
+    state.selectedCustomers.clear();
+    state.selectedMaterials.clear();
+    state.searchQuery = "";
+    state.lastSearchQuery = "";
+  };
+  const restoreFocus = () => {
+    window.requestAnimationFrame(() => {
+      window.focus();
+      const input = document.querySelector<HTMLInputElement>(
+        "input:not([type=\"checkbox\"]):not([disabled]), textarea:not([disabled])"
+      );
+      input?.focus();
+    });
+  };
+  const syncOrderSelection = () => {
+    if (!state.manageEditMode) {
+      state.selectedOrderIds.clear();
+      return;
+    }
+    const existing = new Set(state.orders.map((order) => order.dirName));
+    state.selectedOrderIds = new Set(
+      Array.from(state.selectedOrderIds).filter((id) => existing.has(id))
+    );
+  };
+  const applySettings = async (nextSettings: Settings | null) => {
+    if (!nextSettings) return;
+    state.settings = nextSettings;
+    state.theme = normalizeTheme(nextSettings.theme ?? state.theme);
+    applyTheme(state.theme);
+    if (nextSettings.baseDir) {
+      await refreshOrders();
+    }
+    render();
+  };
+
+  const handleChooseDir = async () => {
+    const nextSettings = await api.chooseBaseDir();
+    await applySettings(nextSettings);
+  };
 
   const createForm = root.querySelector<HTMLFormElement>("#createForm");
   createForm?.addEventListener("input", () => {
@@ -77,16 +181,19 @@ export function bindHandlers(root: HTMLElement, render: () => void) {
         path: f.path,
         name: f.name,
         data: f.data,
+        printQty: f.printQty,
         note: f.note
       }));
       const updated = await api.addFiles(order.dirName, filesPayload);
-      await applyPendingPreviews(updated, state.pendingFiles);
+      await applyPendingPreviews(updated, state.pendingFiles, updated.files);
     }
 
     state.pendingFiles = [];
     state.selectedTarget = null;
     resetDraftOrder();
     await refreshOrders();
+    state.searchQuery = "";
+    state.lastSearchQuery = "";
     form.reset();
     (form.querySelector<HTMLInputElement>('input[name="quantity"]')!).value = "1";
     state.activeTab = "manage";
@@ -103,14 +210,24 @@ export function bindHandlers(root: HTMLElement, render: () => void) {
     resetDraftOrder();
     render();
   });
+  root.querySelector<HTMLButtonElement>("#chooseDirBtn")?.addEventListener("click", handleChooseDir);
+  root.querySelector<HTMLButtonElement>("#initChooseDirBtn")?.addEventListener("click", handleChooseDir);
 
-  root.querySelector<HTMLButtonElement>("#chooseDirBtn")?.addEventListener("click", async () => {
-    const nextSettings = await api.chooseBaseDir();
-    if (nextSettings?.baseDir) {
-      state.settings = nextSettings;
-      await refreshOrders();
-      render();
-    }
+  root.querySelector<HTMLButtonElement>("#initContinueBtn")?.addEventListener("click", async () => {
+    if (!state.settings.baseDir) return;
+    state.onboarding = false;
+    state.activeTab = "add";
+    await refreshOrders();
+    render();
+  });
+
+  root.querySelector<HTMLSelectElement>("#themeSelect")?.addEventListener("change", async (e) => {
+    const nextTheme = normalizeTheme((e.currentTarget as HTMLSelectElement).value);
+    state.theme = nextTheme;
+    applyTheme(nextTheme);
+    const updated = await api.saveTheme(nextTheme);
+    state.settings = updated;
+    render();
   });
 
   root.querySelector<HTMLSelectElement>("#dragModeSelect")?.addEventListener("change", (e) => {
@@ -118,6 +235,188 @@ export function bindHandlers(root: HTMLElement, render: () => void) {
     state.dragMode = nextMode === "download" ? "download" : "native";
     localStorage.setItem("dragMode", state.dragMode);
     render();
+  });
+
+  const searchInput = root.querySelector<HTMLInputElement>("#orderSearch");
+  if (searchInput) {
+    let isComposing = false;
+    const updateSearch = (
+      value: string,
+      selectionStart: number | null,
+      selectionEnd: number | null,
+      preserveFocus: boolean
+    ) => {
+      state.searchQuery = value;
+      state.lastSearchQuery = "";
+      render();
+      if (!preserveFocus) return;
+      window.requestAnimationFrame(() => {
+        const nextInput = document.querySelector<HTMLInputElement>("#orderSearch");
+        if (!nextInput) return;
+        nextInput.focus();
+        if (selectionStart !== null && selectionEnd !== null) {
+          nextInput.setSelectionRange(selectionStart, selectionEnd);
+        }
+      });
+    };
+
+    searchInput.addEventListener("compositionstart", () => {
+      isComposing = true;
+    });
+    searchInput.addEventListener("compositionend", () => {
+      isComposing = false;
+      updateSearch(
+        searchInput.value,
+        searchInput.selectionStart,
+        searchInput.selectionEnd,
+        true
+      );
+    });
+    searchInput.addEventListener("input", () => {
+      if (isComposing) return;
+      const preserveFocus = document.activeElement === searchInput;
+      updateSearch(
+        searchInput.value,
+        searchInput.selectionStart,
+        searchInput.selectionEnd,
+        preserveFocus
+      );
+    });
+  }
+  root.querySelector<HTMLButtonElement>("#clearSearch")?.addEventListener("click", () => {
+    state.searchQuery = "";
+    state.lastSearchQuery = "";
+    render();
+  });
+  root.querySelector<HTMLButtonElement>("#refreshOrders")?.addEventListener("click", async () => {
+    await refreshOrders();
+    syncOrderSelection();
+    state.lastSearchQuery = "";
+    render();
+  });
+  root.querySelector<HTMLButtonElement>("#toggleOrderEdit")?.addEventListener("click", () => {
+    state.manageEditMode = !state.manageEditMode;
+    if (!state.manageEditMode) {
+      state.selectedOrderIds.clear();
+    }
+    render();
+  });
+  root.querySelector<HTMLButtonElement>("#selectAllOrders")?.addEventListener("click", () => {
+    const ids = Array.from(root.querySelectorAll<HTMLInputElement>("[data-order-select]"))
+      .map((input) => input.dataset.orderSelect)
+      .filter((id): id is string => Boolean(id));
+    state.selectedOrderIds = new Set(ids);
+    render();
+  });
+  root.querySelector<HTMLButtonElement>("#deleteSelectedOrders")?.addEventListener("click", async () => {
+    if (state.selectedOrderIds.size === 0) return;
+    if (!(await confirmDialog("\u786e\u5b9a\u8981\u5220\u9664\u9009\u4e2d\u8ba2\u5355\u5417\uff1f")))
+      return;
+    const ids = Array.from(state.selectedOrderIds);
+    try {
+      await Promise.all(ids.map((id) => api.deleteOrder(id)));
+    } finally {
+      resetInteractionState();
+      await refreshOrders().catch((error) => console.error("Refresh orders failed:", error));
+      syncOrderSelection();
+      render();
+      restoreFocus();
+    }
+  });
+  root.querySelectorAll<HTMLInputElement>("[data-order-select]").forEach((input) => {
+    input.addEventListener("change", () => {
+      const id = input.dataset.orderSelect;
+      if (!id) return;
+      if (input.checked) {
+        state.selectedOrderIds.add(id);
+      } else {
+        state.selectedOrderIds.delete(id);
+      }
+      render();
+    });
+  });
+
+  root.querySelectorAll<HTMLFormElement>(".asset-form").forEach((form) => {
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const kind = form.dataset.asset;
+      const input = form.querySelector<HTMLInputElement>("input");
+      if (!input) return;
+      const value = normalizeAssetValue(input.value);
+      if (!value) return;
+      const { customers, materials } = getAssetLists();
+      if (kind === "customer") {
+        const nextCustomers = addAssetValue(customers, value);
+        await saveAssets(nextCustomers, materials);
+      } else if (kind === "material") {
+        const nextMaterials = addAssetValue(materials, value);
+        await saveAssets(customers, nextMaterials);
+      }
+      input.value = "";
+    });
+  });
+  root.querySelector<HTMLButtonElement>("#toggleAssetEdit")?.addEventListener("click", () => {
+    state.assetEditMode = !state.assetEditMode;
+    if (!state.assetEditMode) {
+      state.selectedCustomers.clear();
+      state.selectedMaterials.clear();
+    }
+    render();
+  });
+  root.querySelector<HTMLButtonElement>("#selectAllAssets")?.addEventListener("click", () => {
+    const customers = normalizeAssetList(state.settings.customers);
+    const materials = normalizeAssetList(state.settings.materials);
+    state.selectedCustomers = new Set(customers);
+    state.selectedMaterials = new Set(materials);
+    render();
+  });
+  root.querySelector<HTMLButtonElement>("#deleteSelectedAssets")?.addEventListener("click", async () => {
+    const hasSelection =
+      state.selectedCustomers.size > 0 || state.selectedMaterials.size > 0;
+    if (!hasSelection) return;
+    if (!(await confirmDialog("\u786e\u5b9a\u8981\u5220\u9664\u9009\u4e2d\u8d44\u4ea7\u5417\uff1f")))
+      return;
+    const customers = normalizeAssetList(state.settings.customers).filter(
+      (item) => !state.selectedCustomers.has(item)
+    );
+    const materials = normalizeAssetList(state.settings.materials).filter(
+      (item) => !state.selectedMaterials.has(item)
+    );
+    state.selectedCustomers.clear();
+    state.selectedMaterials.clear();
+    await saveAssets(customers, materials);
+  });
+  root.querySelectorAll<HTMLInputElement>("[data-asset-select]").forEach((input) => {
+    input.addEventListener("change", () => {
+      const kind = input.dataset.assetKind;
+      const value = input.dataset.assetValue;
+      if (!kind || !value) return;
+      const target = kind === "customer" ? state.selectedCustomers : state.selectedMaterials;
+      if (input.checked) {
+        target.add(value);
+      } else {
+        target.delete(value);
+      }
+      render();
+    });
+  });
+
+  root.querySelectorAll<HTMLButtonElement>("[data-action=\"delete-customer\"]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const value = btn.dataset.value ?? "";
+      const { customers, materials } = getAssetLists();
+      const nextCustomers = removeAssetValue(customers, value);
+      await saveAssets(nextCustomers, materials);
+    });
+  });
+
+  root.querySelectorAll<HTMLButtonElement>("[data-action=\"delete-material\"]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const value = btn.dataset.value ?? "";
+      const { customers, materials } = getAssetLists();
+      const nextMaterials = removeAssetValue(materials, value);
+      await saveAssets(customers, nextMaterials);
+    });
   });
 
   root.querySelectorAll<HTMLElement>('[data-drop="pending"]').forEach((zone) => {
@@ -155,13 +454,44 @@ export function bindHandlers(root: HTMLElement, render: () => void) {
     });
   });
 
-  root.querySelectorAll<HTMLInputElement>('[data-pending-index] .file-note').forEach((input) => {
+  root.querySelectorAll<HTMLTextAreaElement>('[data-pending-index] .file-note').forEach((input) => {
     input.addEventListener("click", (e) => e.stopPropagation());
     input.addEventListener("change", () => {
       const row = input.closest<HTMLElement>("[data-pending-index]");
       const index = Number(row?.dataset.pendingIndex ?? -1);
       if (index < 0) return;
       state.pendingFiles[index].note = input.value.trim();
+    });
+  });
+
+  root.querySelectorAll<HTMLButtonElement>(".pending-qty-button").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const row = btn.closest<HTMLElement>("[data-pending-index]");
+      const index = Number(row?.dataset.pendingIndex ?? -1);
+      if (index < 0) return;
+      const file = state.pendingFiles[index];
+      if (!file) return;
+      const action = btn.getAttribute("data-qty-action");
+      const delta = action === "inc" ? 1 : -1;
+      const next = Math.max(1, normalizeQty((file.printQty ?? 1) + delta, 1));
+      file.printQty = next;
+      const input = row?.querySelector<HTMLInputElement>(".pending-qty-input");
+      if (input) input.value = String(next);
+    });
+  });
+
+  root.querySelectorAll<HTMLInputElement>(".pending-qty-input").forEach((input) => {
+    input.addEventListener("click", (e) => e.stopPropagation());
+    input.addEventListener("change", () => {
+      const row = input.closest<HTMLElement>("[data-pending-index]");
+      const index = Number(row?.dataset.pendingIndex ?? -1);
+      if (index < 0) return;
+      const file = state.pendingFiles[index];
+      if (!file) return;
+      const next = Math.max(1, normalizeQty(input.value ?? 1, 1));
+      file.printQty = next;
+      input.value = String(next);
     });
   });
 
@@ -237,7 +567,9 @@ export function bindHandlers(root: HTMLElement, render: () => void) {
       );
       const updated = await api.addFiles(id, payloads);
       const updatedWithPreviews =
-        previews.length > 0 ? await applyPendingPreviews(updated, previews) : updated;
+        previews.length > 0
+          ? await applyPendingPreviews(updated, previews, updated.files.slice(-previews.length))
+          : updated;
       applyOrderUpdate(updatedWithPreviews);
       render();
     };
@@ -312,6 +644,14 @@ export function bindHandlers(root: HTMLElement, render: () => void) {
         select.value = "";
         return;
       }
+      if (select.value === "bambu-connect") {
+        const ok = await api.importBambuConnect(dirName, savedAs);
+        if (!ok) {
+          alert("\u53ea\u652f\u6301 3mf \u6587\u4ef6\u5bfc\u5165\u3002");
+        }
+        select.value = "";
+        return;
+      }
       if (select.value === "replace") {
         const paths = await api.selectFiles();
         if (!paths || paths.length === 0) {
@@ -322,7 +662,7 @@ export function bindHandlers(root: HTMLElement, render: () => void) {
         applyOrderUpdate(updated);
       }
       if (select.value === "delete") {
-        if (!confirm("\u786e\u5b9a\u8981\u5220\u9664\u5417\uff1f")) {
+        if (!(await confirmDialog("\u786e\u5b9a\u8981\u5220\u9664\u5417\uff1f"))) {
           select.value = "";
           return;
         }
@@ -335,7 +675,7 @@ export function bindHandlers(root: HTMLElement, render: () => void) {
     });
   });
 
-  root.querySelectorAll<HTMLInputElement>('[data-file] .file-note').forEach((input) => {
+  root.querySelectorAll<HTMLTextAreaElement>('[data-file] .file-note').forEach((input) => {
     input.addEventListener("click", (e) => e.stopPropagation());
     input.addEventListener("change", async () => {
       const row = input.closest<HTMLElement>("[data-file]");
@@ -359,13 +699,17 @@ export function bindHandlers(root: HTMLElement, render: () => void) {
       const field = btn.getAttribute("data-qty-field") as "print" | "printed";
       const action = btn.getAttribute("data-qty-action");
       if (!field || !action) return;
+      const stepInput = row.querySelector<HTMLInputElement>(
+        `.qty-step[data-qty-step="${field}"]`
+      );
+      const stepValue = Math.max(1, normalizeQty(stepInput?.value ?? 1, 1));
       const printInput = row.querySelector<HTMLInputElement>('.qty-input[data-qty-field="print"]');
       const printedInput = row.querySelector<HTMLInputElement>(
         '.qty-input[data-qty-field="printed"]'
       );
       const printQty = normalizeQty(printInput?.value ?? 0, 0);
       const printedQty = normalizeQty(printedInput?.value ?? 0, 0);
-      const delta = action === "inc" ? 1 : -1;
+      const delta = action === "inc" ? stepValue : -stepValue;
       const nextPrint = field === "print" ? printQty + delta : printQty;
       const nextPrinted = field === "printed" ? printedQty + delta : printedQty;
       const next = clampQuantities(nextPrint, nextPrinted);
@@ -465,11 +809,16 @@ export function bindHandlers(root: HTMLElement, render: () => void) {
       const item = btn.closest<HTMLElement>("[data-id]");
       const id = item?.getAttribute("data-id");
       if (!id) return;
-      if (!confirm("\u786e\u5b9a\u8981\u5220\u9664\u5417\uff1f")) return;
-      await api.deleteOrder(id);
-      state.editingOrderId = null;
-      await refreshOrders();
-      render();
+      if (!(await confirmDialog("\u786e\u5b9a\u8981\u5220\u9664\u5417\uff1f"))) return;
+      try {
+        await api.deleteOrder(id);
+      } finally {
+        resetInteractionState();
+        await refreshOrders().catch((error) => console.error("Refresh orders failed:", error));
+        syncOrderSelection();
+        render();
+        restoreFocus();
+      }
     });
   });
 
@@ -521,6 +870,32 @@ export function bindHandlers(root: HTMLElement, render: () => void) {
       applyOrderUpdate(updated);
     });
   });
+
+  root.querySelectorAll<HTMLInputElement>(".qty-step").forEach((input) => {
+    input.addEventListener("click", (e) => e.stopPropagation());
+    input.addEventListener("change", () => {
+      const field = input.getAttribute("data-qty-step") as "print" | "printed";
+      if (!field) return;
+      const next = Math.max(1, normalizeQty(input.value ?? 1, 1));
+      input.value = String(next);
+      state.qtyStep[field] = next;
+      localStorage.setItem(field === "print" ? "qtyStepPrint" : "qtyStepPrinted", String(next));
+      render();
+    });
+  });
+
+  const query = state.searchQuery.trim();
+  if (!query) {
+    state.lastSearchQuery = "";
+  } else if (query !== state.lastSearchQuery) {
+    const target = root.querySelector<HTMLElement>('[data-search-target="true"]');
+    if (target) {
+      target.classList.add("search-jump");
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      window.setTimeout(() => target.classList.remove("search-jump"), 1200);
+    }
+    state.lastSearchQuery = query;
+  }
 }
 
 export function attachGlobalHandlers(render: () => void) {
@@ -556,7 +931,7 @@ export function attachGlobalHandlers(render: () => void) {
       return;
     }
     if (state.selectedTarget.kind === "order-file") {
-      if (!confirm("\u786e\u5b9a\u8981\u5220\u9664\u5417\uff1f")) return;
+      if (!(await confirmDialog("\u786e\u5b9a\u8981\u5220\u9664\u5417\uff1f"))) return;
       const { dirName, savedAs } = state.selectedTarget;
       const updated = await api.deleteFile(dirName, savedAs);
       applyOrderUpdate(updated);
@@ -592,3 +967,10 @@ export function attachGlobalHandlers(render: () => void) {
     }
   });
 }
+
+
+
+
+
+
+

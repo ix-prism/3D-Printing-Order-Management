@@ -1,4 +1,4 @@
-/// <reference types="vite/client" />
+﻿/// <reference types="vite/client" />
 
 type OrderStatus =
   | "\u65b0\u5efa"
@@ -6,6 +6,8 @@ type OrderStatus =
   | "\u540e\u5904\u7406"
   | "\u5df2\u5b8c\u6210"
   | "\u5df2\u53d6\u6d88";
+
+type ThemeId = "classic" | "glass-light" | "glass-dark";
 
 type OrderFile = {
   name: string;
@@ -37,6 +39,9 @@ type Order = {
 type Settings = {
   baseDir?: string;
   lastOrderNumber?: number;
+  customers?: string[];
+  materials?: string[];
+  theme?: ThemeId;
 };
 
 interface Window {
@@ -44,6 +49,15 @@ interface Window {
     getSettings: () => Promise<Settings>;
     chooseBaseDir: () => Promise<Settings | null>;
     setBaseDir: (baseDir: string) => Promise<Settings>;
+    saveAssets: (customers: string[], materials: string[]) => Promise<Settings>;
+    saveTheme: (theme: ThemeId) => Promise<Settings>;
+    confirmDialog: (options: {
+      message: string;
+      detail?: string;
+      confirmLabel?: string;
+      cancelLabel?: string;
+      type?: "none" | "info" | "error" | "question" | "warning";
+    }) => Promise<boolean>;
     listOrders: () => Promise<Order[]>;
     createOrder: (payload: Partial<Order>) => Promise<Order>;
     updateOrder: (dirName: string, patch: Partial<Order>) => Promise<Order>;
@@ -53,6 +67,7 @@ interface Window {
     getClipboardImage: () => Promise<string | null>;
     getPreviewDataUrl: (dirName: string, previewFile: string) => Promise<string | null>;
     showFileInFolder: (dirName: string, savedAs: string) => Promise<boolean>;
+    importBambuConnect: (dirName: string, savedAs: string) => Promise<boolean>;
     startDragFile: (filePath: string) => boolean;
     addFiles: (
       dirName: string,

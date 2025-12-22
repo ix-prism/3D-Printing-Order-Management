@@ -1,9 +1,12 @@
-const { contextBridge, ipcRenderer } = require("electron");
+﻿const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("electronAPI", {
   getSettings: () => ipcRenderer.invoke("get-settings"),
   chooseBaseDir: () => ipcRenderer.invoke("choose-base-dir"),
   setBaseDir: (baseDir) => ipcRenderer.invoke("set-base-dir", baseDir),
+  saveAssets: (customers, materials) => ipcRenderer.invoke("save-assets", customers, materials),
+  saveTheme: (theme) => ipcRenderer.invoke("save-theme", theme),
+  confirmDialog: (options) => ipcRenderer.invoke("confirm-dialog", options),
   listOrders: () => ipcRenderer.invoke("list-orders"),
   createOrder: (payload) => ipcRenderer.invoke("create-order", payload),
   updateOrder: (dirName, patch) => ipcRenderer.invoke("update-order", dirName, patch),
@@ -15,6 +18,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("get-preview-data-url", dirName, previewFile),
   showFileInFolder: (dirName, savedAs) =>
     ipcRenderer.invoke("show-file-in-folder", dirName, savedAs),
+  importBambuConnect: (dirName, savedAs) =>
+    ipcRenderer.invoke("import-bambu-connect", dirName, savedAs),
   startDragFile: (filePath) => ipcRenderer.sendSync("start-drag-file", filePath),
   addFiles: (dirName, files, folderNote) =>
     ipcRenderer.invoke("add-files", dirName, files, folderNote),

@@ -18,7 +18,8 @@ export function addPendingFiles(paths: string[]) {
       id,
       path: p,
       name: basename(p),
-      note: ""
+      note: "",
+      printQty: 1
     });
   }
 }
@@ -33,6 +34,7 @@ export async function addPendingFilesFromFileObjects(files: File[]) {
       id,
       name: file.name,
       note: "",
+      printQty: 1,
       data,
       size: file.size,
       lastModified: file.lastModified
@@ -70,7 +72,11 @@ export async function fillPendingPreviewsFromPaths(paths: string[], onUpdate: ()
   }
 }
 
-export async function applyPendingPreviews(order: Order, pending: PendingFile[]) {
+export async function applyPendingPreviews(
+  order: Order,
+  pending: PendingFile[],
+  fallbackFiles: OrderFile[] = []
+) {
   const buckets = new Map<string, OrderFile[]>();
   for (const file of order.files || []) {
     if (!buckets.has(file.name)) buckets.set(file.name, []);
@@ -78,11 +84,13 @@ export async function applyPendingPreviews(order: Order, pending: PendingFile[])
   }
 
   let latest = order;
+  let fallbackIndex = 0;
   for (const p of pending) {
+    const fallback = fallbackFiles[fallbackIndex];
+    fallbackIndex += 1;
     if (!p.previewDataUrl) continue;
     const bucket = buckets.get(p.name);
-    if (!bucket || bucket.length === 0) continue;
-    const entry = bucket.shift();
+    const entry = bucket?.shift() ?? fallback;
     if (!entry) continue;
     const updated = await api.savePreviewImage(order.dirName, entry.savedAs, p.previewDataUrl);
     latest = updated;
