@@ -1,4 +1,5 @@
 ﻿# PrintOrder
+![图标](docs\source\Generated Image January 06, 2026 - 9_18AM.jpeg)
 
 面向个人小工作室的本地 3D 打印订单管理工具，支持订单创建、文件管理与打印流程跟踪。数据仅保存在本机文件系统中，离线可用。
 ![截图 1](picture/1.jpg)
