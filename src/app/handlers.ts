@@ -7,11 +7,17 @@ import {
   applyPendingPreviews,
   fillPendingPreviewsFromPaths
 } from "./pending";
-import { generatePreviewDataUrl, isPreviewableFileName, isStepFileName } from "./preview-generator";
+import {
+  generatePreviewDataUrl,
+  getExtension,
+  isPreviewableFileName,
+  isStepFileName
+} from "./preview-generator";
 import { applyPreviewToDom, cachePreview, dropPreviewCache } from "./preview";
-import { PendingFile, resetDraftOrder, state } from "./state";
+import { MonitorFile, PendingFile, resetDraftOrder, state } from "./state";
 import { applyTheme, normalizeTheme } from "./theme";
 import {
+  basename,
   clampQuantities,
   dataTransferToFiles,
   dataTransferToPaths,
@@ -27,6 +33,68 @@ async function confirmDialog(message: string) {
     return api.confirmDialog({ message });
   }
   return window.confirm(message);
+}
+
+function toMonitorFile(
+  file: { path: string; name?: string; size?: number; mtimeMs?: number },
+  status: MonitorFile["status"]
+): MonitorFile {
+  const name = file.name ?? basename(file.path);
+  return {
+    path: file.path,
+    name,
+    ext: getExtension(name),
+    size: Number(file.size ?? 0),
+    mtimeMs: Number(file.mtimeMs ?? 0),
+    status
+  };
+}
+
+function upsertMonitorFile(
+  file: { path: string; name?: string; size?: number; mtimeMs?: number },
+  status: MonitorFile["status"]
+) {
+  const existing = state.monitorFiles.find((item) => item.path === file.path);
+  if (!existing) {
+    state.monitorFiles.push(toMonitorFile(file, status));
+    return;
+  }
+  existing.name = file.name ?? existing.name;
+  existing.ext = getExtension(existing.name);
+  if (Number.isFinite(Number(file.size))) existing.size = Number(file.size);
+  if (Number.isFinite(Number(file.mtimeMs))) existing.mtimeMs = Number(file.mtimeMs);
+  if (existing.status === "added" || existing.status === "ignored") return;
+  if (status === "new") {
+    existing.status = "new";
+    return;
+  }
+  if (existing.status === "new") return;
+  existing.status = status;
+}
+
+function appendMonitorFiles(
+  files: Array<{ path: string; name?: string; size?: number; mtimeMs?: number }>,
+  status: MonitorFile["status"]
+) {
+  if (!files || files.length === 0) return;
+  for (const file of files) {
+    if (!file?.path) continue;
+    upsertMonitorFile(file, status);
+  }
+}
+
+function getMonitorCandidates() {
+  return state.monitorFiles.filter((file) => {
+    if (file.status === "added" || file.status === "ignored") return false;
+    if (state.monitorFilter === "new") return file.status === "new";
+    return true;
+  });
+}
+
+function markMonitorFile(path: string, status: MonitorFile["status"]) {
+  const target = state.monitorFiles.find((item) => item.path === path);
+  if (!target) return;
+  target.status = status;
 }
 
 export function bindHandlers(root: HTMLElement, render: () => void) {
@@ -135,6 +203,80 @@ export function bindHandlers(root: HTMLElement, render: () => void) {
     await applySettings(nextSettings);
   };
 
+  const handleMonitorChoose = async () => {
+    const folder = await api.selectWatchFolder();
+    if (!folder) return;
+    const ok = await api.watchFolder(folder);
+    if (!ok) {
+      alert("\u65e0\u6cd5\u76d1\u63a7\u8be5\u76ee\u5f55\uff0c\u8bf7\u68c0\u67e5\u8def\u5f84\u548c\u6743\u9650\u3002");
+      return;
+    }
+    state.monitorFolder = folder;
+    state.monitorFiles = [];
+    if (state.monitorFilter === "all") {
+      const files = await api.listWatchFolderFiles();
+      appendMonitorFiles(files, "existing");
+    }
+    render();
+  };
+
+  const handleMonitorRefresh = async () => {
+    if (!state.monitorFolder) return;
+    const added = await api.refreshWatchFolder();
+    if (added.length === 0) return;
+    appendMonitorFiles(added, "new");
+    render();
+  };
+
+  const handleMonitorFilterChange = async (value: string) => {
+    state.monitorFilter = value === "all" ? "all" : "new";
+    if (state.monitorFilter === "all" && state.monitorFolder) {
+      const files = await api.listWatchFolderFiles();
+      appendMonitorFiles(files, "existing");
+    }
+    render();
+  };
+
+  const handleMonitorResetHistory = () => {
+    state.monitorFiles = state.monitorFiles.map((file) => {
+      if (file.status === "added" || file.status === "ignored") {
+        return { ...file, status: "new" };
+      }
+      return file;
+    });
+    render();
+  };
+
+  const handleMonitorAddAll = async () => {
+    const targets = getMonitorCandidates();
+    if (targets.length === 0) return;
+    const paths = targets.map((file) => file.path);
+    addPendingFiles(paths);
+    for (const file of targets) {
+      file.status = "added";
+    }
+    render();
+    await fillPendingPreviewsFromPaths(paths, render);
+  };
+
+  const handleMonitorAddOne = async (path: string) => {
+    if (!path) return;
+    const target = state.monitorFiles.find((file) => file.path === path);
+    if (!target || target.status === "added") return;
+    addPendingFiles([path]);
+    markMonitorFile(path, "added");
+    render();
+    await fillPendingPreviewsFromPaths([path], render);
+  };
+
+  const handleMonitorIgnoreOne = (path: string) => {
+    if (!path) return;
+    const target = state.monitorFiles.find((file) => file.path === path);
+    if (!target || target.status === "ignored" || target.status === "added") return;
+    markMonitorFile(path, "ignored");
+    render();
+  };
+
   const createForm = root.querySelector<HTMLFormElement>("#createForm");
   createForm?.addEventListener("input", () => {
     if (!createForm) return;
@@ -209,6 +351,40 @@ export function bindHandlers(root: HTMLElement, render: () => void) {
     state.selectedTarget = null;
     resetDraftOrder();
     render();
+  });
+  root.querySelector<HTMLButtonElement>("#monitorChooseBtn")?.addEventListener(
+    "click",
+    handleMonitorChoose
+  );
+  root.querySelector<HTMLSelectElement>("#monitorFilterSelect")?.addEventListener(
+    "change",
+    (e) => handleMonitorFilterChange((e.currentTarget as HTMLSelectElement).value)
+  );
+  root.querySelector<HTMLButtonElement>("#monitorRefreshBtn")?.addEventListener(
+    "click",
+    handleMonitorRefresh
+  );
+  root.querySelector<HTMLButtonElement>("#monitorResetBtn")?.addEventListener(
+    "click",
+    handleMonitorResetHistory
+  );
+  root.querySelector<HTMLButtonElement>("#monitorAddAllBtn")?.addEventListener(
+    "click",
+    handleMonitorAddAll
+  );
+  root.querySelectorAll<HTMLButtonElement>("[data-monitor-action]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const action = btn.dataset.monitorAction;
+      const path = btn.dataset.monitorPath;
+      if (!action || !path) return;
+      if (action === "add") {
+        await handleMonitorAddOne(path);
+        return;
+      }
+      if (action === "ignore") {
+        handleMonitorIgnoreOne(path);
+      }
+    });
   });
   root.querySelector<HTMLButtonElement>("#chooseDirBtn")?.addEventListener("click", handleChooseDir);
   root.querySelector<HTMLButtonElement>("#initChooseDirBtn")?.addEventListener("click", handleChooseDir);
@@ -901,6 +1077,14 @@ export function bindHandlers(root: HTMLElement, render: () => void) {
 export function attachGlobalHandlers(render: () => void) {
   if (state.handlersAttached) return;
   state.handlersAttached = true;
+
+  if (typeof api.onWatchFolderAdded === "function") {
+    api.onWatchFolderAdded((payload) => {
+      if (!payload || payload.folder !== state.monitorFolder) return;
+      appendMonitorFiles(payload.files ?? [], "new");
+      render();
+    });
+  }
 
   window.addEventListener("keydown", async (e) => {
     if (e.key !== "Delete") return;

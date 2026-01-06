@@ -1,8 +1,8 @@
 {
     "name":  "printorder",
     "private":  true,
-    "version":  "0.1.0",
-    "description":  "PrintOrder - 鏈湴 3D 鎵撳嵃璁㈠崟绠＄悊宸ュ叿",
+    "version":  "0.1.2",
+    "description":  "PrintOrder - 3D Printing Order Management Tool",
     "author":  "ix-prism",
     "license":  "GPL-3.0-only",
     "type":  "module",

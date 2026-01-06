@@ -11,6 +11,16 @@ contextBridge.exposeInMainWorld("electronAPI", {
   createOrder: (payload) => ipcRenderer.invoke("create-order", payload),
   updateOrder: (dirName, patch) => ipcRenderer.invoke("update-order", dirName, patch),
   selectFiles: () => ipcRenderer.invoke("select-files"),
+  selectWatchFolder: () => ipcRenderer.invoke("select-watch-folder"),
+  watchFolder: (folderPath) => ipcRenderer.invoke("watch-folder", folderPath),
+  refreshWatchFolder: () => ipcRenderer.invoke("refresh-watch-folder"),
+  listWatchFolderFiles: () => ipcRenderer.invoke("list-watch-folder-files"),
+  unwatchFolder: () => ipcRenderer.invoke("unwatch-folder"),
+  onWatchFolderAdded: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("watch-folder-added", listener);
+    return () => ipcRenderer.removeListener("watch-folder-added", listener);
+  },
   readFileBuffer: (filePath) => ipcRenderer.invoke("read-file-buffer", filePath),
   getFileThumbnail: (filePath, size) => ipcRenderer.invoke("get-file-thumbnail", filePath, size),
   getClipboardImage: () => ipcRenderer.invoke("get-clipboard-image"),

@@ -160,11 +160,42 @@ function previewFileName(savedAs) {
 }
 
 function decodeImageDataUrl(dataUrl) {
-  const match = /^data:image\/(png|jpe?g);base64,(.+)$/i.exec(dataUrl || "");
-  if (!match) {
+  if (typeof dataUrl !== "string") {
     throw new Error("Invalid image data");
   }
-  return Buffer.from(match[2], "base64");
+  if (typeof nativeImage?.createFromDataURL !== "function") {
+    throw new Error("Native image unavailable");
+  }
+  const image = nativeImage.createFromDataURL(dataUrl);
+  if (!image || image.isEmpty()) {
+    throw new Error("Invalid image data");
+  }
+  return image.toPNG();
+}
+
+function sniffImageMime(buffer, filePath) {
+  if (buffer?.length >= 8) {
+    if (
+      buffer[0] === 0x89 &&
+      buffer[1] === 0x50 &&
+      buffer[2] === 0x4e &&
+      buffer[3] === 0x47 &&
+      buffer[4] === 0x0d &&
+      buffer[5] === 0x0a &&
+      buffer[6] === 0x1a &&
+      buffer[7] === 0x0a
+    ) {
+      return "image/png";
+    }
+  }
+  if (buffer?.length >= 3) {
+    if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+      return "image/jpeg";
+    }
+  }
+  const ext = path.extname(filePath ?? "").toLowerCase();
+  if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
+  return "image/png";
 }
 
 function is3mfFile(filePath) {
@@ -194,6 +225,83 @@ function toBuffer(data) {
     return Buffer.from(data.data);
   }
   return null;
+}
+
+const folderWatchers = new Map();
+
+function normalizeWatchName(name) {
+  return String(name ?? "").toLowerCase();
+}
+
+async function listFolderFiles(folderPath) {
+  const entries = await fsp.readdir(folderPath, { withFileTypes: true });
+  const names = entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name)
+    .filter((name) => !String(name).toLowerCase().endsWith(".tmp"));
+  const files = await Promise.all(
+    names.map(async (name) => {
+      const filePath = path.join(folderPath, name);
+      try {
+        const stat = await fsp.stat(filePath);
+        return {
+          name,
+          path: filePath,
+          size: stat.size,
+          mtimeMs: stat.mtimeMs
+        };
+      } catch {
+        return null;
+      }
+    })
+  );
+  return files.filter((file) => Boolean(file));
+}
+
+async function scanForNewFiles(watchEntry) {
+  const files = await listFolderFiles(watchEntry.folder);
+  const added = [];
+  for (const file of files) {
+    const key = normalizeWatchName(file.name);
+    if (watchEntry.known.has(key)) continue;
+    watchEntry.known.add(key);
+    added.push(file);
+  }
+  return added;
+}
+
+function stopFolderWatch(contentsId) {
+  const entry = folderWatchers.get(contentsId);
+  if (!entry) return;
+  if (entry.timer) clearTimeout(entry.timer);
+  if (entry.watcher) entry.watcher.close();
+  folderWatchers.delete(contentsId);
+}
+
+function scheduleFolderScan(entry) {
+  if (entry.timer) clearTimeout(entry.timer);
+  entry.timer = setTimeout(() => {
+    entry.timer = null;
+    void runFolderScan(entry);
+  }, 200);
+}
+
+async function runFolderScan(entry) {
+  if (entry.scanning) return;
+  entry.scanning = true;
+  try {
+    const added = await scanForNewFiles(entry);
+    if (added.length === 0) return;
+    if (entry.webContents.isDestroyed()) {
+      stopFolderWatch(entry.webContents.id);
+      return;
+    }
+    entry.webContents.send("watch-folder-added", { folder: entry.folder, files: added });
+  } catch (error) {
+    console.warn("Watch folder scan failed:", error);
+  } finally {
+    entry.scanning = false;
+  }
 }
 
 app.whenReady().then(() => {
@@ -268,6 +376,88 @@ ipcMain.handle("select-files", async () => {
   });
   if (result.canceled) return [];
   return result.filePaths;
+});
+
+ipcMain.handle("select-watch-folder", async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ["openDirectory"]
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
+
+ipcMain.handle("watch-folder", async (event, folderPath) => {
+  stopFolderWatch(event.sender.id);
+  if (!folderPath || typeof folderPath !== "string") return false;
+  const normalized = path.normalize(folderPath);
+  if (!fs.existsSync(normalized)) return false;
+  let stat;
+  try {
+    stat = await fsp.stat(normalized);
+  } catch {
+    return false;
+  }
+  if (!stat.isDirectory()) return false;
+
+  let files;
+  try {
+    files = await listFolderFiles(normalized);
+  } catch {
+    return false;
+  }
+  const known = new Set(files.map((file) => normalizeWatchName(file.name)));
+  const entry = {
+    folder: normalized,
+    known,
+    watcher: null,
+    timer: null,
+    scanning: false,
+    webContents: event.sender
+  };
+
+  try {
+    entry.watcher = fs.watch(normalized, { persistent: false }, () => {
+      scheduleFolderScan(entry);
+    });
+  } catch (error) {
+    console.warn("Watch folder failed:", error);
+    return false;
+  }
+
+  folderWatchers.set(event.sender.id, entry);
+  event.sender.once("destroyed", () => stopFolderWatch(event.sender.id));
+  return true;
+});
+
+ipcMain.handle("refresh-watch-folder", async (event) => {
+  const entry = folderWatchers.get(event.sender.id);
+  if (!entry) return [];
+  try {
+    return await scanForNewFiles(entry);
+  } catch (error) {
+    console.warn("Refresh watch folder failed:", error);
+    return [];
+  }
+});
+
+ipcMain.handle("list-watch-folder-files", async (event) => {
+  const entry = folderWatchers.get(event.sender.id);
+  if (!entry) return [];
+  try {
+    const files = await listFolderFiles(entry.folder);
+    for (const file of files) {
+      entry.known.add(normalizeWatchName(file.name));
+    }
+    return files;
+  } catch (error) {
+    console.warn("List watch folder files failed:", error);
+    return [];
+  }
+});
+
+ipcMain.handle("unwatch-folder", async (event) => {
+  stopFolderWatch(event.sender.id);
+  return true;
 });
 
 ipcMain.handle("read-file-buffer", async (_event, filePath) => {
@@ -352,8 +542,7 @@ ipcMain.handle("get-preview-data-url", async (_event, dirName, previewFile) => {
   const filePath = path.join(settings.baseDir, dirName, previewFile);
   if (!fs.existsSync(filePath)) return null;
   const buffer = await fsp.readFile(filePath);
-  const ext = path.extname(filePath).toLowerCase();
-  const mime = ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : "image/png";
+  const mime = sniffImageMime(buffer, filePath);
   return `data:${mime};base64,${buffer.toString("base64")}`;
 });
 

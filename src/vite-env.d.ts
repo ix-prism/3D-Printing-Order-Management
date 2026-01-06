@@ -44,6 +44,13 @@ type Settings = {
   theme?: ThemeId;
 };
 
+type WatchFolderFile = {
+  path: string;
+  name: string;
+  size: number;
+  mtimeMs: number;
+};
+
 interface Window {
   electronAPI: {
     getSettings: () => Promise<Settings>;
@@ -62,6 +69,14 @@ interface Window {
     createOrder: (payload: Partial<Order>) => Promise<Order>;
     updateOrder: (dirName: string, patch: Partial<Order>) => Promise<Order>;
     selectFiles: () => Promise<string[]>;
+    selectWatchFolder: () => Promise<string | null>;
+    watchFolder: (folderPath: string) => Promise<boolean>;
+    refreshWatchFolder: () => Promise<WatchFolderFile[]>;
+    listWatchFolderFiles: () => Promise<WatchFolderFile[]>;
+    unwatchFolder: () => Promise<boolean>;
+    onWatchFolderAdded: (
+      callback: (payload: { folder: string; files: WatchFolderFile[] }) => void
+    ) => () => void;
     readFileBuffer: (filePath: string) => Promise<Uint8Array | null>;
     getFileThumbnail: (filePath: string, size?: number) => Promise<string | null>;
     getClipboardImage: () => Promise<string | null>;

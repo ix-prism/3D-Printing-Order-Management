@@ -12,7 +12,9 @@ export function renderNav({ activeTab, baseDir }: NavState) {
     <nav class="topbar">
       <div class="topbar-inner">
         <div class="brand">
-          <div class="brand-mark">PO</div>
+          <div class="brand-mark brand-mark--image">
+            <img class="brand-icon" src="./app-icon.png" alt="PrintOrder" />
+          </div>
           <div class="brand-text">
             <div class="brand-title">PrintOrder</div>
             <div class="brand-sub">\u8ba2\u5355\u76ee\u5f55: ${baseLabel}</div>

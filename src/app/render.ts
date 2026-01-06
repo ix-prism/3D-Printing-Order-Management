@@ -135,6 +135,100 @@ function renderPendingFiles() {
     .join("");
 }
 
+function monitorIconLabel(ext: string) {
+  const trimmed = ext.startsWith(".") ? ext.slice(1) : ext;
+  const label = trimmed ? trimmed.toUpperCase() : "FILE";
+  return label.length > 6 ? label.slice(0, 6) : label;
+}
+
+function monitorIconKind(ext: string) {
+  const lower = ext.toLowerCase();
+  if (lower === ".stl" || lower === ".obj" || lower === ".3mf") return "model";
+  if (lower === ".stp" || lower === ".step") return "step";
+  return "other";
+}
+
+function formatFileSize(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let index = 0;
+  while (value >= 1024 && index < units.length - 1) {
+    value /= 1024;
+    index += 1;
+  }
+  const fixed = value < 10 && index > 0 ? 1 : 0;
+  return `${value.toFixed(fixed)} ${units[index]}`;
+}
+
+function formatFileDate(ms: number) {
+  if (!Number.isFinite(ms) || ms <= 0) return "";
+  return new Date(ms).toLocaleString();
+}
+
+function monitorStatusLabel(status: string) {
+  if (status === "added") return "\u5df2\u6dfb\u52a0";
+  if (status === "ignored") return "\u5df2\u5ffd\u7565";
+  return "";
+}
+
+function renderMonitorFiles() {
+  const files =
+    state.monitorFilter === "all"
+      ? state.monitorFiles
+      : state.monitorFiles.filter((file) => file.status === "new");
+  if (!files.length) {
+    const emptyLabel =
+      state.monitorFilter === "all"
+        ? "\u6682\u65e0\u6587\u4ef6\u3002"
+        : "\u6682\u65e0\u65b0\u589e\u6587\u4ef6\u3002";
+    return `<div class="monitor-empty muted">${emptyLabel}</div>`;
+  }
+  return `
+    <div class="monitor-list">
+      ${files
+        .map((file) => {
+          const label = monitorIconLabel(file.ext);
+          const kind = monitorIconKind(file.ext);
+          const dateLabel = formatFileDate(file.mtimeMs);
+          const sizeLabel = formatFileSize(file.size);
+          const statusLabel = monitorStatusLabel(file.status);
+          const addDisabled = file.status === "added" ? "disabled" : "";
+          const ignoreDisabled =
+            file.status === "ignored" || file.status === "added" ? "disabled" : "";
+          return `
+            <div class="monitor-item">
+              <div class="monitor-icon ${kind}">${escapeHtml(label)}</div>
+              <div class="monitor-body">
+                <div class="monitor-name" title="${escapeAttribute(file.name)}">${escapeHtml(
+            file.name
+          )}</div>
+                <div class="monitor-item-meta">
+                  <span>${escapeHtml(dateLabel)}</span>
+                  <span>${escapeHtml(sizeLabel)}</span>
+                  ${
+                    statusLabel
+                      ? `<span class="monitor-status ${file.status}">${escapeHtml(statusLabel)}</span>`
+                      : ""
+                  }
+                </div>
+              </div>
+              <div class="monitor-item-actions">
+                <button type="button" data-monitor-action="add" data-monitor-path="${escapeAttribute(
+                  file.path
+                )}" ${addDisabled}>\u6dfb\u52a0</button>
+                <button type="button" data-monitor-action="ignore" data-monitor-path="${escapeAttribute(
+                  file.path
+                )}" ${ignoreDisabled}>\u5ffd\u7565</button>
+              </div>
+            </div>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
 function renderOrderFiles(order: Order, query: string, queryLower: string, tracker: SearchTracker) {
   if (!order.files || order.files.length === 0) {
     return `<div class="muted">\u6682\u65e0\u6587\u4ef6\u3002</div>`;
@@ -423,6 +517,23 @@ function renderAddOrder() {
   const disabledAttr = hasBaseDir ? "" : "disabled";
   const customers = toAssetList(state.settings.customers);
   const materials = toAssetList(state.settings.materials);
+  const monitorNewCount = state.monitorFiles.filter((file) => file.status === "new").length;
+  const monitorAvailableCount = state.monitorFiles.filter((file) => {
+    if (file.status === "added" || file.status === "ignored") return false;
+    if (state.monitorFilter === "new") return file.status === "new";
+    return true;
+  }).length;
+  const monitorFolder = state.monitorFolder;
+  const monitorBadge = monitorFolder
+    ? `\u76d1\u63a7\u4e2d \u00b7 \u65b0\u589e ${monitorNewCount} \u4e2a`
+    : "\u672a\u542f\u7528";
+  const monitorPath = monitorFolder
+    ? escapeHtml(monitorFolder)
+    : "\u9009\u62e9\u76ee\u5f55\u540e\u81ea\u52a8\u76d1\u63a7\u65b0\u589e\u6587\u4ef6\u3002";
+  const monitorActive = monitorFolder ? "is-active" : "";
+  const monitorRefreshDisabled = monitorFolder ? "" : "disabled";
+  const monitorResetDisabled = monitorFolder ? "" : "disabled";
+  const monitorAddDisabled = monitorAvailableCount > 0 ? "" : "disabled";
   return `
       <section class="card" style="${state.activeTab === "add" ? "" : "display:none;"}">
         <form id="createForm">
@@ -492,6 +603,28 @@ function renderAddOrder() {
           <div class="file-list">
             ${renderPendingFiles()}
           </div>
+        </div>
+        <div class="monitor-panel">
+          <div class="monitor-header">
+            <div class="monitor-title">
+              <h3 class="section-title">\u76d1\u63a7\u6587\u4ef6\u5939</h3>
+              <div class="monitor-meta">
+                <span class="monitor-badge ${monitorActive}">${escapeHtml(monitorBadge)}</span>
+                <span class="muted monitor-path" title="${monitorFolder ? escapeAttribute(monitorFolder) : ""}">${monitorPath}</span>
+              </div>
+            </div>
+            <div class="monitor-actions">
+              <select id="monitorFilterSelect">
+                <option value="new" ${state.monitorFilter === "new" ? "selected" : ""}>\u53ea\u663e\u793a\u65b0\u589e</option>
+                <option value="all" ${state.monitorFilter === "all" ? "selected" : ""}>\u663e\u793a\u6240\u6709</option>
+              </select>
+              <button type="button" id="monitorChooseBtn">\u9009\u62e9\u76ee\u5f55</button>
+              <button type="button" id="monitorRefreshBtn" ${monitorRefreshDisabled}>\u5237\u65b0</button>
+              <button type="button" id="monitorResetBtn" ${monitorResetDisabled}>\u91cd\u7f6e\u8bb0\u5f55</button>
+              <button type="button" id="monitorAddAllBtn" class="primary" ${monitorAddDisabled}>\u4e00\u952e\u6dfb\u52a0</button>
+            </div>
+          </div>
+          ${renderMonitorFiles()}
         </div>
       </section>
   `;
@@ -587,8 +720,20 @@ function renderSettings() {
   const baseDirLabel = hasBaseDir
     ? escapeHtml(state.settings.baseDir ?? "")
     : "\u672a\u8bbe\u7f6e";
+  const githubUrl = "https://github.com/ix-prism/3D-Printing-Order-Management";
   return `
       <section class="card" style="${state.activeTab === "settings" ? "" : "display:none;"}">
+        <div class="settings-hero">
+          <img class="settings-logo" src="./app-icon.png" alt="PrintOrder" />
+          <div class="settings-meta">
+            <div class="settings-app-name">PrintOrder</div>
+            <a class="settings-link" href="${githubUrl}" target="_blank" rel="noopener" aria-label="GitHub">
+              <svg class="settings-github" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M12 2.5c-5.52 0-10 4.48-10 10 0 4.42 2.87 8.17 6.84 9.5.5.09.68-.22.68-.48l-.01-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.14-1.1-1.45-1.1-1.45-.9-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.88 1.51 2.3 1.08 2.86.82.09-.65.35-1.08.63-1.33-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.02-2.68-.1-.25-.44-1.27.1-2.65 0 0 .84-.27 2.75 1.02A9.55 9.55 0 0 1 12 6.84c.85 0 1.71.11 2.5.33 1.9-1.29 2.74-1.02 2.74-1.02.54 1.38.2 2.4.1 2.65.63.7 1.02 1.59 1.02 2.68 0 3.84-2.35 4.68-4.59 4.93.36.31.69.93.69 1.88l-.01 2.79c0 .26.18.57.69.47A10 10 0 0 0 22 12.5c0-5.52-4.48-10-10-10Z"/>
+              </svg>
+            </a>
+          </div>
+        </div>
         <div class="muted" style="margin-bottom:12px;">\u9996\u6b21\u4f7f\u7528\u9700\u8981\u8bbe\u7f6e\u8ba2\u5355\u6839\u76ee\u5f55\u3002</div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
           <button type="button" id="chooseDirBtn">\u9009\u62e9\u76ee\u5f55</button>

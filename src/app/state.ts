@@ -11,6 +11,17 @@ export type PendingFile = {
   previewDataUrl?: string;
 };
 
+export type MonitorFileStatus = "new" | "existing" | "added" | "ignored";
+
+export type MonitorFile = {
+  path: string;
+  name: string;
+  ext: string;
+  size: number;
+  mtimeMs: number;
+  status: MonitorFileStatus;
+};
+
 export type SelectedTarget =
   | { kind: "pending-file"; index: number }
   | { kind: "pending-preview"; index: number }
@@ -38,6 +49,9 @@ export const state = {
   pendingFiles: [] as PendingFile[],
   selectedTarget: null as SelectedTarget | null,
   handlersAttached: false,
+  monitorFolder: null as string | null,
+  monitorFiles: [] as MonitorFile[],
+  monitorFilter: "new" as "new" | "all",
   onboarding: false,
   theme: DEFAULT_THEME as ThemeId,
   searchQuery: "",
