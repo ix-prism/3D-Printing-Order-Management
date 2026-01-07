@@ -50,6 +50,13 @@
                                                  "target":  "portable"
                                              }
                                          ]
+                          },
+                  "mac":  {
+                              "icon":  "build/icon.icns",
+                              "target":  [
+                                             "dmg",
+                                             "zip"
+                                         ]
                           }
               }
 }
