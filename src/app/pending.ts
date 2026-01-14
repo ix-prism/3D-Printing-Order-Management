@@ -49,11 +49,13 @@ export async function addPendingFilesFromFileObjects(files: File[]) {
 
 export async function fillPendingPreviewsFromPaths(paths: string[], onUpdate: () => void) {
   for (const p of paths) {
+    const existing = state.pendingFiles.find((f) => f.path === p);
+    if (existing?.previewDataUrl) continue;
     const ext = getExtension(p);
     if (isStepFileName(p)) {
       const thumb = await api.getFileThumbnail(p, 256);
       if (!thumb) continue;
-      const item = state.pendingFiles.find((f) => f.path === p);
+      const item = existing ?? state.pendingFiles.find((f) => f.path === p);
       if (!item) continue;
       item.previewDataUrl = thumb;
       onUpdate();
@@ -65,7 +67,7 @@ export async function fillPendingPreviewsFromPaths(paths: string[], onUpdate: ()
     if (!arrayBuffer) continue;
     const preview = await generatePreviewDataUrl(p, arrayBuffer);
     if (!preview) continue;
-    const item = state.pendingFiles.find((f) => f.path === p);
+    const item = existing ?? state.pendingFiles.find((f) => f.path === p);
     if (!item) continue;
     item.previewDataUrl = preview;
     onUpdate();

@@ -319,6 +319,12 @@ export function bindHandlers(root: HTMLElement, render: () => void) {
     const order = await api.createOrder(payload);
 
     if (state.pendingFiles.length > 0) {
+      const pendingPaths = state.pendingFiles
+        .map((file) => file.path)
+        .filter((path): path is string => Boolean(path));
+      if (pendingPaths.length > 0) {
+        await fillPendingPreviewsFromPaths(pendingPaths, () => {});
+      }
       const filesPayload = state.pendingFiles.map((f) => ({
         path: f.path,
         name: f.name,
